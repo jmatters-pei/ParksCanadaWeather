@@ -1257,9 +1257,6 @@ def main():
         logger.info(f"\nIMPUTATION RULES:")
         logger.info(f"  - Stations with >={CONFIG['IMPUTATION_THRESHOLD_PCT']}% missing data NOT imputed")
         logger.info(f"  - Dew values outside [{CONFIG['DEW_MIN']}, {CONFIG['DEW_MAX']}] removed")
-        logger.info("\nNEW IN v2.6:")
-        logger.info("  - Duplicate rows are now removed automatically")
-        logger.info("  - Duplicates are logged by station before removal")
 
     except Exception as e:
         logger.error(f"Pipeline failed: {e}", exc_info=True)
