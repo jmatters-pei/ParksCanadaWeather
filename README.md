@@ -478,7 +478,7 @@ CONFIG = {
 
 **Duplicate handling:**
 - Duplicate column names: Merged using backward fill
-- Duplicate rows: Identified and logged (not removed as it is possible these are valid data points)
+- Duplicate rows: Identified and removed
 
 ### Performance Optimization
 

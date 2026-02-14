@@ -1,7 +1,7 @@
 """
 Weather Data Processing Pipeline for Parks Canada
 Fetches, cleans, aggregates, and imputes weather data from multiple sources.
-VERSION: 2.5 - With 25% Threshold + Data Quality + Dew Bounds Check
+VERSION: 2.6 - With Duplicate Removal + 25% Threshold + Data Quality + Dew Bounds Check
 """
 import pandas as pd
 import gc
@@ -404,7 +404,6 @@ def generate_data_quality_report(df, stage=""):
 
     # Columns
     logger.info(f"\nColumns: {list(df.columns)}")
-
     logger.info(f"{'='*60}\n")
 
 def create_data_quality_csv(df):
@@ -642,6 +641,37 @@ def clean_weather_data(df):
     mask_keep = ~(df.drop(columns=['station', 'Datetime_UTC'], errors='ignore').isnull().all(axis=1))
     df = df[mask_keep].reset_index(drop=True)
 
+    # ============================================================================
+    # DUPLICATE REMOVAL (NEW IN VERSION 2.6)
+    # ============================================================================
+
+    # Count duplicates before removal
+    dup_count_before = df.duplicated().sum()
+
+    if dup_count_before > 0:
+        logger.info(f"\nFound {dup_count_before:,} duplicate rows ({dup_count_before/len(df)*100:.1f}%)")
+
+        # Show duplicates by station
+        dup_mask = df.duplicated(keep=False)
+        if dup_mask.sum() > 0:
+            dup_by_station = df[dup_mask].groupby('station').size()
+            logger.info("Duplicates by station:")
+            for station, count in dup_by_station.items():
+                logger.info(f"  {station}: {count:,} rows")
+
+        # Remove duplicates (keep first occurrence)
+        df = df.drop_duplicates(keep='first')
+
+        rows_removed = dup_count_before
+        logger.info(f"Removed {rows_removed:,} duplicate rows (kept first occurrence)")
+        logger.info(f"Rows after duplicate removal: {len(df):,}")
+    else:
+        logger.info("\nNo duplicate rows found")
+
+    # ============================================================================
+    # END DUPLICATE REMOVAL
+    # ============================================================================
+
     # Reorder columns
     if 'Datetime_UTC' in df.columns:
         other_cols = [col for col in df.columns if col not in ['Datetime_UTC', 'station']]
@@ -705,7 +735,7 @@ def impute_missing_values(df):
     """
     Implement tiered imputation strategy for weather data.
 
-    NEW: Skip imputation for station-column combinations with ≥25% missing data.
+    NEW: Skip imputation for station-column combinations with >=25% missing data.
 
     Tiers:
     1. Linear interpolation for gaps < 3 hours
@@ -721,7 +751,7 @@ def impute_missing_values(df):
     """
     logger.info("="*60)
     logger.info("Starting Missing Data Imputation")
-    logger.info(f"Threshold: Skip imputation if ≥{CONFIG['IMPUTATION_THRESHOLD_PCT']}% missing")
+    logger.info(f"Threshold: Skip imputation if >={CONFIG['IMPUTATION_THRESHOLD_PCT']}% missing")
     logger.info("="*60)
 
     # Ensure sorted by time within each station
@@ -771,7 +801,7 @@ def impute_missing_values(df):
 
             if station_missing_pct >= CONFIG['IMPUTATION_THRESHOLD_PCT']:
                 stations_to_skip.append(station)
-                logger.info(f"  SKIPPING {station}: {station_missing_pct:.1f}% missing (≥{CONFIG['IMPUTATION_THRESHOLD_PCT']}%)")
+                logger.info(f"  SKIPPING {station}: {station_missing_pct:.1f}% missing (>={CONFIG['IMPUTATION_THRESHOLD_PCT']}%)")
             else:
                 stations_to_impute.append(station)
 
@@ -922,7 +952,7 @@ def impute_missing_values(df):
             'stations_skipped': len(stations_to_skip)
         }
 
-        logger.info(f"  RESULT: {original_missing:,} → {final_missing:,} missing "
+        logger.info(f"  RESULT: {original_missing:,} -> {final_missing:,} missing "
                    f"({imputation_rate:.1f}% imputed, {len(stations_to_skip)} stations skipped)")
 
     # Summary report
@@ -939,7 +969,7 @@ def impute_missing_values(df):
     if total_original > 0:
         imputation_pct = (total_imputed / total_original * 100)
         logger.info(f"Successfully imputed: {total_imputed:,} ({imputation_pct:.1f}%)")
-        logger.info(f"Remaining missing: {total_remaining:,} (sensor failures or ≥{CONFIG['IMPUTATION_THRESHOLD_PCT']}% missing)")
+        logger.info(f"Remaining missing: {total_remaining:,} (sensor failures or >={CONFIG['IMPUTATION_THRESHOLD_PCT']}% missing)")
         logger.info("")
         logger.info("By Method:")
         tier1_total = sum(s['tier1_imputed'] for s in imputation_stats.values())
@@ -962,7 +992,7 @@ def impute_missing_values(df):
 def circular_mean_degrees(angles):
     """
     Calculate circular mean of wind directions in degrees.
-    Handles 360° = 0° circular nature using vector averaging.
+    Handles 360 = 0 circular nature using vector averaging.
     """
     angles = angles.dropna()
     if len(angles) == 0:
@@ -1139,8 +1169,8 @@ def create_daily_aggregates(df):
 def main():
     """Main processing pipeline."""
     logger.info("="*60)
-    logger.info("Starting Weather Data Processing Pipeline v2.5")
-    logger.info("With 25% Threshold + Data Quality + Dew Bounds Check")
+    logger.info("Starting Weather Data Processing Pipeline v2.6")
+    logger.info("With Duplicate Removal + 25% Threshold + Data Quality")
     logger.info("="*60)
 
     try:
@@ -1169,7 +1199,7 @@ def main():
         # Step 6: Generate quality report
         generate_data_quality_report(all_weather_data, "After Initial Load")
 
-        # Step 7: Clean weather data
+        # Step 7: Clean weather data (NOW INCLUDES DUPLICATE REMOVAL)
         all_weather_data = clean_weather_data(all_weather_data)
 
         # Step 8: Generate quality report after cleaning
@@ -1228,8 +1258,11 @@ def main():
         logger.info("  2 = forward/backward filled (3-6 hours)")
         logger.info("  3 = calculated or special method")
         logger.info(f"\nIMPUTATION RULES:")
-        logger.info(f"  - Stations with ≥{CONFIG['IMPUTATION_THRESHOLD_PCT']}% missing data NOT imputed")
+        logger.info(f"  - Stations with >={CONFIG['IMPUTATION_THRESHOLD_PCT']}% missing data NOT imputed")
         logger.info(f"  - Dew values outside [{CONFIG['DEW_MIN']}, {CONFIG['DEW_MAX']}] removed")
+        logger.info("\nNEW IN v2.6:")
+        logger.info("  - Duplicate rows are now removed automatically")
+        logger.info("  - Duplicates are logged by station before removal")
 
     except Exception as e:
         logger.error(f"Pipeline failed: {e}", exc_info=True)
