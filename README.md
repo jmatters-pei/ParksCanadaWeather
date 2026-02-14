@@ -251,7 +251,7 @@ With 25% Threshold + Data Quality + Dew Bounds Check
 
 ---
 
-## 📂 Understanding the Outputs
+##  Understanding the Outputs
 
 ### Output Files
 
@@ -348,7 +348,7 @@ With 25% Threshold + Data Quality + Dew Bounds Check
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 ParksCanadaWeather/
@@ -432,8 +432,8 @@ CONFIG = {
     'TEMP_MAX': 40,
     'RH_MIN': 0,                          # Humidity bounds (%)
     'RH_MAX': 100,
-    'DEW_MIN': -100,                      # Dew point bounds (°C)
-    'DEW_MAX': 100,
+    'DEW_MIN': -50,                      # Dew point bounds (°C)
+    'DEW_MAX': 50,
 }
 ```
 
@@ -473,7 +473,7 @@ CONFIG = {
 **Range checks:**
 - Temperature: -40°C to +40°C (PEI climate bounds)
 - Relative Humidity: 0% to 100% (physical limits)
-- Dew Point: -100°C to +100°C (very conservative)
+- Dew Point: -50°C to +50°C (conservative)
 - Values outside ranges set to NaN
 
 **Duplicate handling:**

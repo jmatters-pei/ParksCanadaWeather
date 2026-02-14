@@ -460,11 +460,10 @@ Formula:
 
 ### Dew Point Bounds
 
-**Valid Range:** -100°C to +100°C
+**Valid Range:** -50°C to +50°C
 
 **Rationale:**
-- Very conservative bounds
-- Catches extreme sensor errors
+- Catches sensor and imputation errors
 
 **Action:**
 - Values outside range → Set to NaN

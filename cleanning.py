@@ -1,16 +1,13 @@
 """
 Weather Data Processing Pipeline for Parks Canada
 Fetches, cleans, aggregates, and imputes weather data from multiple sources.
-VERSION: 2.6 - With Duplicate Removal + 25% Threshold + Data Quality + Dew Bounds Check
 """
 import pandas as pd
 import gc
 import re
 import urllib.request
-import json
 import time
 import numpy as np
-import os
 import logging
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,10 +23,10 @@ CONFIG = {
     'ECCC_START_YEAR': 2022,
     'API_DELAY': 0.5,
     'LOCAL_DATA_PATH': r'C:\WeatherData\Data',  # Local folder path
-    'OUTPUT_ALL_DATA': 'PEINP_all_weather_data.csv',
-    'OUTPUT_HOURLY': 'PEINP_hourly_weather_data.csv',
-    'OUTPUT_DAILY': 'PEINP_daily_weather_data.csv',
-    'OUTPUT_DATA_QUALITY': 'PEINP_data_quality_report.csv',
+    'OUTPUT_ALL_DATA': 'all_weather_data.csv',
+    'OUTPUT_HOURLY': 'hourly_weather_data.csv',
+    'OUTPUT_DAILY': 'daily_weather_data.csv',
+    'OUTPUT_DATA_QUALITY': 'data_quality_report.csv',
     'CACHE_DIR': 'cache',
     'MAX_WORKERS': 4,
     # Imputation settings
@@ -41,8 +38,8 @@ CONFIG = {
     'TEMP_MAX': 40,
     'RH_MIN': 0,
     'RH_MAX': 100,
-    'DEW_MIN': -100,  # Dew point reasonable bounds (°C)
-    'DEW_MAX': 100,
+    'DEW_MIN': -60,  # Dew point reasonable bounds (°C)
+    'DEW_MAX': 50,
 }
 
 # ============================================================================
@@ -262,7 +259,7 @@ def clean_columns(df):
     df.columns = [re.split(r'[\(_]', str(col))[0].strip() for col in df.columns]
 
     # Drop junk columns
-    junk_patterns = ['serial', 'battery']
+    junk_patterns = ['serial', 'battery', 'solar',]
     cols_to_drop = [col for col in df.columns if any(p in str(col).lower() for p in junk_patterns)]
     df = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
 
@@ -277,8 +274,8 @@ def clean_columns(df):
             'average wind speed': 'Wind Speed',
             'wind spd': 'Wind Speed',
             'windspd': 'Wind Speed',
-            'accumulated rain': 'Rain',
-            'precip. amount': 'Rain',
+            'accumulated rain': 'Percipitation',
+            'precip. amount': 'Percipitation',
             'temp': 'Temperature',
             'wind dir': 'Wind Direction',
             'rel hum': 'Rh',
