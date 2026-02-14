@@ -717,7 +717,7 @@ SOFTWARE.
 **Project Author:** Jonathan Matters  
 **Email:** jmatters@dal.ca  
 **GitHub:** https://github.com/jmatters-pei/ParksCanadaWeather  
-**LinkedIn:** [Your LinkedIn profile]
+**LinkedIn:** www.linkedin.com/in/jonathan-matters-45701b54
 
 ---
 
