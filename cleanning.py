@@ -755,17 +755,29 @@ def impute_missing_values(df):
     df = df.sort_values(['station', 'Datetime_UTC']).reset_index(drop=True)
 
     # Get all columns except datetime and station
-    numeric_cols = [c for c in df.columns 
-                   if c not in ['Datetime_UTC', 'station'] 
-                   and not c.endswith('_imputed')]
+    all_cols = [c for c in df.columns 
+                if c not in ['Datetime_UTC', 'station'] 
+                and not c.endswith('_imputed')]
+
+    # FIXED: Exclude columns that shouldn't be imputed
+    exclude_from_imputation = [
+        'Date/Time (LST)', 'Year', 'Month', 'Time (LST)', 'Day',
+        'Temp (°C)', 'Dew Point Temp (°C)', 'Rel Hum (%)', 
+        'Precip. Amount (mm)', 'Wind Dir (10s deg)', 'Wind Spd (km/h)',
+        'Percipitation'  # This column appears to be all NaN/duplicate
+    ]
+
+    numeric_cols = [c for c in all_cols if c not in exclude_from_imputation]
+
+    logger.info(f"Total columns: {len(all_cols)}")
+    logger.info(f"Excluding from imputation: {exclude_from_imputation}")
+    logger.info(f"Columns to impute: {len(numeric_cols)} - {numeric_cols}")
 
     # Convert to numeric if needed (handles object/category dtypes)
     for col in numeric_cols:
         if df[col].dtype == 'object' or df[col].dtype.name == 'category':
             df[col] = pd.to_numeric(df[col], errors='coerce')
             logger.info(f"Converted {col} from {df[col].dtype} to numeric")
-
-    logger.info(f"Found {len(numeric_cols)} columns to impute: {numeric_cols}")
 
     # Track statistics
     imputation_stats = {}
@@ -809,6 +821,11 @@ def impute_missing_values(df):
         for station in stations_to_impute:
             mask = df['station'] == station
             station_df = df.loc[mask].copy()
+
+            # FIXED: Skip if datetime has NaN values
+            if station_df['Datetime_UTC'].isnull().any():
+                logger.warning(f"  Skipping {station} for {col}: Has NaN datetime values")
+                continue
 
             # Set datetime index for time-based interpolation
             station_df = station_df.set_index('Datetime_UTC')
