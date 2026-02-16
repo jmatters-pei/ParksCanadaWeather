@@ -30,9 +30,7 @@ CONFIG = {
     'CACHE_DIR': 'cache',
     'MAX_WORKERS': 4,
     # Imputation settings
-    'INTERPOLATE_LIMIT_HOURS': 3,
-    'FORWARD_FILL_LIMIT_HOURS': 6,
-    'BACKWARD_FILL_LIMIT_HOURS': 3,
+    'INTERPOLATE_LIMIT_HOURS': 2,  # Max gap for interpolation
     'IMPUTATION_THRESHOLD_PCT': 25.0,  # Don't impute if >25% missing
     'TEMP_MIN': -40,  # PEI reasonable bounds (°C)
     'TEMP_MAX': 40,
@@ -442,14 +440,12 @@ def create_data_quality_csv(df):
             if flag_col in station_df.columns:
                 imputed_0_original = (station_df[flag_col] == 0).sum()
                 imputed_1_interpolated = (station_df[flag_col] == 1).sum()
-                imputed_2_forward_back = (station_df[flag_col] == 2).sum()
-                imputed_3_calculated = (station_df[flag_col] == 3).sum()
-                total_imputed = imputed_1_interpolated + imputed_2_forward_back + imputed_3_calculated
+                imputed_2_calculated = (station_df[flag_col] == 2).sum()
+                total_imputed = imputed_1_interpolated + imputed_2_calculated
             else:
                 imputed_0_original = total_rows - missing_count
                 imputed_1_interpolated = 0
-                imputed_2_forward_back = 0
-                imputed_3_calculated = 0
+                imputed_2_calculated = 0
                 total_imputed = 0
 
             # Calculate statistics on non-missing values
@@ -473,8 +469,7 @@ def create_data_quality_csv(df):
                 'missing_percent': round(missing_pct, 2),
                 'original_data_count': imputed_0_original,
                 'interpolated_count': imputed_1_interpolated,
-                'forward_backward_filled_count': imputed_2_forward_back,
-                'calculated_count': imputed_3_calculated,
+                'calculated_count': imputed_2_calculated,
                 'total_imputed_count': total_imputed,
                 'imputation_percent': round((total_imputed / total_rows * 100) if total_rows > 0 else 0, 2),
                 'mean': round(mean_val, 2) if not np.isnan(mean_val) else np.nan,
@@ -500,14 +495,12 @@ def create_data_quality_csv(df):
         if flag_col in df.columns:
             imputed_0_original = (df[flag_col] == 0).sum()
             imputed_1_interpolated = (df[flag_col] == 1).sum()
-            imputed_2_forward_back = (df[flag_col] == 2).sum()
-            imputed_3_calculated = (df[flag_col] == 3).sum()
-            total_imputed = imputed_1_interpolated + imputed_2_forward_back + imputed_3_calculated
+            imputed_2_calculated = (df[flag_col] == 2).sum()
+            total_imputed = imputed_1_interpolated + imputed_2_calculated
         else:
             imputed_0_original = total_rows - missing_count
             imputed_1_interpolated = 0
-            imputed_2_forward_back = 0
-            imputed_3_calculated = 0
+            imputed_2_calculated = 0
             total_imputed = 0
 
         # Calculate statistics across all stations
@@ -531,8 +524,7 @@ def create_data_quality_csv(df):
             'missing_percent': round(missing_pct, 2),
             'original_data_count': imputed_0_original,
             'interpolated_count': imputed_1_interpolated,
-            'forward_backward_filled_count': imputed_2_forward_back,
-            'calculated_count': imputed_3_calculated,
+            'calculated_count': imputed_2_calculated,
             'total_imputed_count': total_imputed,
             'imputation_percent': round((total_imputed / total_rows * 100) if total_rows > 0 else 0, 2),
             'mean': round(mean_val, 2) if not np.isnan(mean_val) else np.nan,
@@ -793,7 +785,7 @@ def impute_missing_values(df):
         logger.info(f"\n{col}: {original_missing:,} missing ({original_pct:.1f}%)")
 
         # Create imputation flag column
-        # 0 = original data, 1 = interpolated, 2 = forward/backward filled, 3 = calculated/special
+        # 0 = original data, 1 = interpolated, 2 = calculated/special
         flag_col = f'{col}_imputed'
         df[flag_col] = 0
         df.loc[df[col].isnull(), flag_col] = 1
@@ -845,31 +837,11 @@ def impute_missing_values(df):
         tier1_imputed = original_missing - after_tier1
         logger.info(f"  Tier 1 (interpolation): Filled {tier1_imputed:,} values")
 
-        # TIER 2: Forward/backward fill for medium gaps
-        # Only for specific variables that exhibit persistence
-        if col in ['Temperature', 'Dew', 'Rh', 'Wind Speed']:
-            df.loc[df[col].isnull(), flag_col] = 2
+        # Since Tier 2 (forward/backward fill) was removed, skip directly to variable-specific
+        after_tier2 = after_tier1
 
-            for station in stations_to_impute:
-                mask = df['station'] == station
-                station_df = df.loc[mask].copy()
-
-                # Forward fill
-                station_df[col] = station_df[col].ffill(limit=CONFIG['FORWARD_FILL_LIMIT_HOURS'])
-                # Backward fill (shorter limit)
-                station_df[col] = station_df[col].bfill(limit=CONFIG['BACKWARD_FILL_LIMIT_HOURS'])
-
-                df.loc[mask, col] = station_df[col].values
-
-            after_tier2 = df[col].isnull().sum()
-            tier2_imputed = after_tier1 - after_tier2
-            logger.info(f"  Tier 2 (forward/back fill): Filled {tier2_imputed:,} values")
-        else:
-            after_tier2 = after_tier1
-            tier2_imputed = 0
-
-        # TIER 3: Variable-specific imputation
-        tier3_imputed = 0
+        # TIER 2: Variable-specific imputation
+        tier2_imputed = 0
 
         if col == 'Rain':
             # Missing rain data almost certainly means no rain
@@ -877,12 +849,12 @@ def impute_missing_values(df):
             for station in stations_to_impute:
                 mask = df['station'] == station
                 missing_rain = df.loc[mask, col].isnull()
-                df.loc[mask & missing_rain, flag_col] = 3
+                df.loc[mask & missing_rain, flag_col] = 2
                 df.loc[mask & missing_rain, col] = 0
 
-            after_tier3 = df[col].isnull().sum()
-            tier3_imputed = after_tier2 - after_tier3
-            logger.info(f"  Tier 3 (rain=0): Filled {tier3_imputed:,} values with 0")
+            after_tier2_special = df[col].isnull().sum()
+            tier2_imputed = after_tier2 - after_tier2_special
+            logger.info(f"  Tier 2 (rain=0): Filled {tier2_imputed:,} values with 0")
 
         elif col == 'Wind Gust Speed':
             # If Wind Gust Speed missing but Wind Speed available, use Wind Speed
@@ -893,14 +865,14 @@ def impute_missing_values(df):
                     has_wind_speed = df.loc[mask, 'Wind Speed'].notnull()
                     impute_mask_station = mask & missing_gust & has_wind_speed
 
-                    df.loc[impute_mask_station, flag_col] = 3
+                    df.loc[impute_mask_station, flag_col] = 2
                     df.loc[impute_mask_station, col] = df.loc[impute_mask_station, 'Wind Speed']
 
-                after_tier3 = df[col].isnull().sum()
-                tier3_imputed = after_tier2 - after_tier3
-                logger.info(f"  Tier 3 (gust=wind): Filled {tier3_imputed:,} values")
+                after_tier2_special = df[col].isnull().sum()
+                tier2_imputed = after_tier2 - after_tier2_special
+                logger.info(f"  Tier 2 (gust=wind): Filled {tier2_imputed:,} values")
             else:
-                after_tier3 = after_tier2
+                after_tier2_special = after_tier2
 
         elif col == 'Rh':
             # Calculate Rh from Temperature and Dew Point where possible
@@ -912,20 +884,20 @@ def impute_missing_values(df):
                     impute_mask_station = mask & missing_rh & has_temp_dew
 
                     if impute_mask_station.sum() > 0:
-                        df.loc[impute_mask_station, flag_col] = 3
+                        df.loc[impute_mask_station, flag_col] = 2
                         calculated_rh = calculate_rh_from_temp_dew(
                             df.loc[impute_mask_station, 'Temperature'],
                             df.loc[impute_mask_station, 'Dew']
                         )
                         df.loc[impute_mask_station, col] = calculated_rh
 
-                after_tier3 = df[col].isnull().sum()
-                tier3_imputed = after_tier2 - after_tier3
-                logger.info(f"  Tier 3 (calc from T+Dew): Filled {tier3_imputed:,} values")
+                after_tier2_special = df[col].isnull().sum()
+                tier2_imputed = after_tier2 - after_tier2_special
+                logger.info(f"  Tier 2 (calc from T+Dew): Filled {tier2_imputed:,} values")
             else:
-                after_tier3 = after_tier2
+                after_tier2_special = after_tier2
         else:
-            after_tier3 = after_tier2
+            after_tier2_special = after_tier2
 
         # Apply bounds checking
         if col == 'Temperature':
@@ -958,7 +930,6 @@ def impute_missing_values(df):
             'original_pct': original_pct,
             'tier1_imputed': tier1_imputed,
             'tier2_imputed': tier2_imputed,
-            'tier3_imputed': tier3_imputed,
             'total_imputed': total_imputed,
             'final_missing': final_missing,
             'final_pct': (final_missing / len(df)) * 100,
@@ -988,10 +959,8 @@ def impute_missing_values(df):
         logger.info("By Method:")
         tier1_total = sum(s['tier1_imputed'] for s in imputation_stats.values())
         tier2_total = sum(s['tier2_imputed'] for s in imputation_stats.values())
-        tier3_total = sum(s['tier3_imputed'] for s in imputation_stats.values())
         logger.info(f"  Tier 1 (Interpolation): {tier1_total:,}")
-        logger.info(f"  Tier 2 (Forward/Back Fill): {tier2_total:,}")
-        logger.info(f"  Tier 3 (Variable-Specific): {tier3_total:,}")
+        logger.info(f"  Tier 2 (Variable-Specific): {tier2_total:,}")
     else:
         logger.info("No missing values found - data is complete!")
 
@@ -1269,8 +1238,7 @@ def main():
         logger.info("\nNOTE: Imputation flags (*_imputed columns) saved in all_weather_data.csv")
         logger.info("  0 = original data")
         logger.info("  1 = interpolated (< 3 hours)")
-        logger.info("  2 = forward/backward filled (3-6 hours)")
-        logger.info("  3 = calculated or special method")
+        logger.info("  2 = calculated or special method")
         logger.info(f"\nIMPUTATION RULES:")
         logger.info(f"  - Stations with >={CONFIG['IMPUTATION_THRESHOLD_PCT']}% missing data NOT imputed")
         logger.info(f"  - Dew values outside [{CONFIG['DEW_MIN']}, {CONFIG['DEW_MAX']}] removed")
